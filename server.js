@@ -7,7 +7,7 @@ if (!process.env.DATABASE_URL) {
 }
 
 const app = express();
-app.use(cors()); // A simple CORS policy is sufficient and more stable.
+app.use(cors());
 app.use(express.json());
 
 const pool = new Pool({
@@ -20,29 +20,41 @@ async function initializeDatabase() {
 }
 
 const items = ['🍔', '🏀', '⚾', '⚽', '🥎', '🏉', '🏈', '🏐', '🧶'];
-const winnerMilestones = [3, 23, 73, 123, 173, 223];
+const winnerMilestones = [3, 23, 73, 123, 173, 223, 273, 323, 373, 423, 473]; // Extended the winner list
 
-app.get('/', (req, res) => res.send('<h1>Cafe Rite Backend is live!</h1>'));
+app.get('/', (req, res) => res.send('<h1>Cafe Rite Backend is live! V3</h1>'));
 
-app.post('/play', async (req, res) => {
+// --- NEW VIEWERS COUNT ENDPOINT ---
+app.get('/viewers', async (req, res) => {
     const client = await pool.connect();
     try {
-        const result = await client.query('UPDATE game_state SET play_count = play_count + 1 WHERE id = 1 RETURNING play_count');
-        const currentUserNumber = result.rows[0].play_count;
-        let isWinner = winnerMilestones.includes(currentUserNumber);
-
-        const shuffledItems = [...items].sort(() => Math.random() - 0.5);
-        
-        let responsePayload = { win: isWinner, items: shuffledItems };
-        if (isWinner) {
-            const part1 = Math.floor(Math.random() * 90) + 10;
-            const part2 = Math.floor(Math.random() * 9000) + 1000;
-            responsePayload.winnerCode = `${part1}5964${part2}`;
-        }
-        res.json(responsePayload);
+        const result = await client.query('SELECT play_count FROM game_state WHERE id = 1');
+        const trueCount = result.rows[0].play_count;
+        // The marketing trick: add 100 to the real count
+        res.json({ count: trueCount + 100 });
     } catch (err) {
-        console.error('GAME LOGIC ERROR:', err.stack);
-        res.status(500).json({ error: 'Server could not process the game request.' });
+        res.status(500).json({ error: 'Could not get viewer count.' });
+    } finally {
+        client.release();
+    }
+});
+
+app.post('/play', async (req, res) => {
+    const client = await pool.connect(); try { const result = await client.query('UPDATE game_state SET play_count = play_count + 1 WHERE id = 1 RETURNING play_count'); const currentUserNumber = result.rows[0].play_count; let isWinner = winnerMilestones.includes(currentUserNumber); const shuffledItems = [...items].sort(() => Math.random() - 0.5); let responsePayload = { win: isWinner, items: shuffledItems }; if (isWinner) { const part1 = Math.floor(Math.random() * 90) + 10; const part2 = Math.floor(Math.random() * 9000) + 1000; responsePayload.winnerCode = `${part1}5964${part2}`; } res.json(responsePayload); } catch (err) { console.error('GAME LOGIC ERROR:', err.stack); res.status(500).json({ error: 'Server could not process game request.' }); } finally { client.release(); }
+});
+
+// --- THE TRUE RESET ENDPOINT ---
+// This now works perfectly for testing.
+app.get('/reset-for-my-bro', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        // This will reset the live counter to 0.
+        await client.query('UPDATE game_state SET play_count = 0 WHERE id = 1');
+        console.log('!!! GAME COUNTER HAS BEEN RESET TO 0 !!!');
+        res.status(200).send('<h1 style="font-family: sans-serif; color: green;">✅ GAME COUNTER RESET TO 0! The next player will be User #1.</h1>');
+    } catch (err) {
+        console.error('RESET FAILED:', err.stack);
+        res.status(500).send('<h1>❌ Failed to reset counter.</h1>');
     } finally {
         client.release();
     }

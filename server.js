@@ -77,7 +77,6 @@ app.post('/play', async (req, res) => {
     }
 });
 
-// THE TRUE GLOBAL RESET
 app.get('/reset-for-my-bro', async (req, res) => {
     const client = await pool.connect(); try { await client.query('UPDATE game_state SET play_count = 0 WHERE id = 1'); await client.query('DELETE FROM recent_plays'); console.log('!!! TRUE GLOBAL RESET COMPLETE !!!'); res.status(200).send('<h1 style="font-family: sans-serif; color: green;">✅ GAME HAS BEEN COMPLETELY RESET FOR ALL USERS!</h1>'); } catch (err) { console.error('RESET FAILED:', err.stack); res.status(500).send('<h1>❌ Failed to reset counter.</h1>'); } finally { client.release(); }
 });

@@ -1,7 +1,7 @@
 {
   "name": "cafe-rite-backend",
   "version": "5.0.0",
-  "description": "The lightning-fast game server for Cafe Rite",
+  "description": "Legendary backend for the Cafe Rite game",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

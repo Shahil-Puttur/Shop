@@ -22,10 +22,31 @@ async function initializeDatabase() {
 // THE CORRECTED WINNER LIST
 const winnerMilestones = [5, 12, 22, 32, 42, 62, 82, 102, 132, 162, 192, 222, 272, 322, 372, 422, 472, 522, 572, 622, 672, 722, 772, 822, 872, 922, 972];
 
-// --- THE UPTIMEROBOT PROOF ---
 app.get('/', (req, res) => {
-    console.log(`Ping received at ${new Date().toISOString()}. Server is awake and ready. ✅`);
+    console.log(`Ping received at ${new Date().toISOString()}. Server is awake. ✅`);
     res.send('<h1>Cafe Rite Backend is live! V-LEGENDARY-FINAL</h1>');
+});
+
+// The check endpoint is now used for cooldown status
+app.post('/check', async (req, res) => {
+    const { deviceId } = req.body;
+    if (!deviceId) return res.status(400).json({ error: 'Device ID required.' });
+    const client = await pool.connect();
+    try {
+        await client.query("DELETE FROM recent_plays WHERE timestamp < NOW() - INTERVAL '24 hours'");
+        const result = await client.query('SELECT timestamp FROM recent_plays WHERE device_id = $1', [deviceId]);
+        const lastPlayed = result.rows.length > 0 ? result.rows[0].timestamp : null;
+        if(lastPlayed) {
+            const cooldownEnd = new Date(lastPlayed).getTime() + (24 * 60 * 60 * 1000);
+            return res.json({ canPlay: false, cooldownEnd: cooldownEnd });
+        }
+        return res.json({ canPlay: true });
+    } catch(err) {
+        console.error("Check error:", err);
+        res.status(500).json({ error: 'Server error during check.' });
+    } finally {
+        client.release();
+    }
 });
 
 app.get('/viewers', async (req, res) => { /* ... unchanged ... */ });
@@ -34,7 +55,7 @@ app.get('/reset-for-my-bro', async (req, res) => { /* ... unchanged ... */ });
 
 // Re-pasting full logic for completeness
 app.get('/viewers', async (req, res) => { const client = await pool.connect(); try { const result = await client.query('SELECT play_count FROM game_state WHERE id = 1'); const trueCount = result.rows.length > 0 ? result.rows[0].play_count : 0; res.json({ count: trueCount + 100 }); } catch (err) { res.status(500).json({ error: 'Could not get viewer count.' }); } finally { client.release(); } });
-app.post('/play', async (req, res) => { const { boxIndex, deviceId } = req.body; if (boxIndex === undefined || !deviceId) { return res.status(400).json({ error: 'Box index and deviceId are required.' }); } const client = await pool.connect(); try { await client.query("DELETE FROM recent_plays WHERE timestamp < NOW() - INTERVAL '24 hours'"); const checkResult = await client.query('SELECT timestamp FROM recent_plays WHERE device_id = $1', [deviceId]); if (checkResult.rows.length > 0) { const cooldownEnd = new Date(checkResult.rows[0].timestamp).getTime() + (24 * 60 * 60 * 1000); return res.status(429).json({ error: 'cooldown', cooldownEnd }); } await client.query('INSERT INTO recent_plays (device_id, timestamp) VALUES ($1, NOW()) ON CONFLICT (device_id) DO UPDATE SET timestamp = NOW()', [deviceId]); const result = await client.query('UPDATE game_state SET play_count = play_count + 1 WHERE id = 1 RETURNING play_count'); const currentUserNumber = result.rows[0].play_count; const isWinner = winnerMilestones.includes(currentUserNumber); const balls = ['🏀', '⚾', '⚽', '🥎', '🏉', '🏈', '🏐', '🧶']; const shuffledBalls = balls.sort(() => Math.random() - 0.5); let finalItems = new Array(9).fill(null); if (isWinner) { finalItems[boxIndex] = '🍔'; let ballIndex = 0; for (let i = 0; i < 9; i++) { if (finalItems[i] === null) { finalItems[i] = shuffledBalls[ballIndex++]; } } } else { finalItems[boxIndex] = shuffledBalls.pop(); let remainingSpots = []; for (let i = 0; i < 9; i++) { if (i !== boxIndex) remainingSpots.push(i); } const burgerSpot = remainingSpots[Math.floor(Math.random() * remainingSpots.length)]; finalItems[burgerSpot] = '🍔'; for (let i = 0; i < 9; i++) { if (finalItems[i] === null) { finalItems[i] = shuffledBalls.pop(); } } } let responsePayload = { win: isWinner, items: finalItems }; if (isWinner) { const part1 = Math.floor(Math.random() * 90) + 10; const part2 = Math.floor(Math.random() * 9000) + 1000; responsePayload.winnerCode = `${part1}5964${part2}`; } res.json(responsePayload); } catch (err) { console.error('GAME LOGIC ERROR:', err.stack); res.status(500).json({ error: 'Server could not process game request.' }); } finally { client.release(); } });
+app.post('/play', async (req, res) => { const { boxIndex, deviceId } = req.body; if (boxIndex === undefined || !deviceId) { return res.status(400).json({ error: 'Box index and deviceId are required.' }); } const client = await pool.connect(); try { await client.query('INSERT INTO recent_plays (device_id, timestamp) VALUES ($1, NOW()) ON CONFLICT (device_id) DO UPDATE SET timestamp = NOW()', [deviceId]); const result = await client.query('UPDATE game_state SET play_count = play_count + 1 WHERE id = 1 RETURNING play_count'); const currentUserNumber = result.rows[0].play_count; const isWinner = winnerMilestones.includes(currentUserNumber); const balls = ['🏀', '⚾', '⚽', '🥎', '🏉', '🏈', '🏐', '🧶']; const shuffledBalls = balls.sort(() => Math.random() - 0.5); let finalItems = new Array(9).fill(null); if (isWinner) { finalItems[boxIndex] = '🍔'; let ballIndex = 0; for (let i = 0; i < 9; i++) { if (finalItems[i] === null) { finalItems[i] = shuffledBalls[ballIndex++]; } } } else { finalItems[boxIndex] = shuffledBalls.pop(); let remainingSpots = []; for (let i = 0; i < 9; i++) { if (i !== boxIndex) remainingSpots.push(i); } const burgerSpot = remainingSpots[Math.floor(Math.random() * remainingSpots.length)]; finalItems[burgerSpot] = '🍔'; for (let i = 0; i < 9; i++) { if (finalItems[i] === null) { finalItems[i] = shuffledBalls.pop(); } } } let responsePayload = { win: isWinner, items: finalItems }; if (isWinner) { const part1 = Math.floor(Math.random() * 90) + 10; const part2 = Math.floor(Math.random() * 9000) + 1000; responsePayload.winnerCode = `${part1}5964${part2}`; } res.json(responsePayload); } catch (err) { console.error('GAME LOGIC ERROR:', err.stack); res.status(500).json({ error: 'Server could not process game request.' }); } finally { client.release(); } });
 app.get('/reset-for-my-bro', async (req, res) => { const client = await pool.connect(); try { await client.query('UPDATE game_state SET play_count = 0 WHERE id = 1'); await client.query('DELETE FROM recent_plays'); console.log('!!! TRUE GLOBAL RESET COMPLETE !!!'); res.status(200).send('<h1 style="font-family: sans-serif; color: green;">✅ GAME HAS BEEN COMPLETELY RESET FOR ALL USERS!</h1>'); } catch (err) { console.error('RESET FAILED:', err.stack); res.status(500).send('<h1>❌ Failed to reset counter.</h1>'); } finally { client.release(); } });
 
 const PORT = process.env.PORT || 3000;

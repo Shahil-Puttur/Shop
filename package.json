@@ -1,6 +1,6 @@
 {
   "name": "cafe-rite-backend",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "description": "Legendary backend for the Cafe Rite game",
   "main": "server.js",
   "scripts": {

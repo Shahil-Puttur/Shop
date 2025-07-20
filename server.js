@@ -19,6 +19,7 @@ async function initializeDatabase() {
     const client = await pool.connect();
     try {
         await client.query('CREATE TABLE IF NOT EXISTS game_state (id INT PRIMARY KEY, play_count INT NOT NULL);');
+        // This is the simple, robust table for the device lock.
         await client.query(`
             CREATE TABLE IF NOT EXISTS recent_plays (
                 id SERIAL PRIMARY KEY,
@@ -66,7 +67,8 @@ app.post('/play', async (req, res) => {
 
     const client = await pool.connect();
     try {
-        // --- THE UNBREAKABLE FIX: We now check the cooldown BEFORE trying to play ---
+        // --- THE UNBREAKABLE FIX ---
+        // We now check the cooldown BEFORE trying to play.
         await client.query("DELETE FROM recent_plays WHERE timestamp < NOW() - INTERVAL '24 hours'");
         const checkResult = await client.query('SELECT timestamp FROM recent_plays WHERE device_id = $1', [deviceId]);
         if (checkResult.rows.length > 0) {
@@ -74,7 +76,7 @@ app.post('/play', async (req, res) => {
             return res.status(429).json({ error: 'cooldown', cooldownEnd });
         }
         
-        // If the user can play, we record their play. THIS IS THE UNBREAKABLE "UPSERT" COMMAND.
+        // If the user can play, we record their play. This is the UNBREAKABLE "UPSERT" COMMAND.
         await client.query(`
             INSERT INTO recent_plays (device_id, timestamp) VALUES ($1, NOW())
             ON CONFLICT (device_id) DO UPDATE SET timestamp = NOW()

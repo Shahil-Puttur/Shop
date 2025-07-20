@@ -15,18 +15,11 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
+// The database is now simple: only one table for the master count.
 async function initializeDatabase() {
     const client = await pool.connect();
     try {
         await client.query('CREATE TABLE IF NOT EXISTS game_state (id INT PRIMARY KEY, play_count INT NOT NULL);');
-        // This is the simple, robust table for the device lock.
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS recent_plays (
-                id SERIAL PRIMARY KEY,
-                device_id VARCHAR(255) UNIQUE NOT NULL,
-                timestamp TIMESTAMPTZ NOT NULL
-            );
-        `);
         const res = await client.query('SELECT * FROM game_state WHERE id = 1');
         if (res.rows.length === 0) {
             await client.query('INSERT INTO game_state (id, play_count) VALUES (1, 0)');
@@ -60,28 +53,13 @@ app.get('/viewers', async (req, res) => {
 });
 
 app.post('/play', async (req, res) => {
-    const { boxIndex, deviceId } = req.body;
-    if (boxIndex === undefined || !deviceId) {
-        return res.status(400).json({ error: 'Box index and deviceId are required.' });
+    const { boxIndex } = req.body; // No longer needs deviceId
+    if (boxIndex === undefined) {
+        return res.status(400).json({ error: 'Box index is required.' });
     }
 
     const client = await pool.connect();
     try {
-        // --- THE UNBREAKABLE FIX ---
-        // We now check the cooldown BEFORE trying to play.
-        await client.query("DELETE FROM recent_plays WHERE timestamp < NOW() - INTERVAL '24 hours'");
-        const checkResult = await client.query('SELECT timestamp FROM recent_plays WHERE device_id = $1', [deviceId]);
-        if (checkResult.rows.length > 0) {
-            const cooldownEnd = new Date(checkResult.rows[0].timestamp).getTime() + (24 * 60 * 60 * 1000);
-            return res.status(429).json({ error: 'cooldown', cooldownEnd });
-        }
-        
-        // If the user can play, we record their play. This is the UNBREAKABLE "UPSERT" COMMAND.
-        await client.query(`
-            INSERT INTO recent_plays (device_id, timestamp) VALUES ($1, NOW())
-            ON CONFLICT (device_id) DO UPDATE SET timestamp = NOW()
-        `, [deviceId]);
-        
         const result = await client.query('UPDATE game_state SET play_count = play_count + 1 WHERE id = 1 RETURNING play_count');
         const currentUserNumber = result.rows[0].play_count;
         const isWinner = winnerMilestones.includes(currentUserNumber);
@@ -122,9 +100,9 @@ app.get('/reset-for-my-bro', async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('UPDATE game_state SET play_count = 0 WHERE id = 1');
-        await client.query('DELETE FROM recent_plays'); // The True Global Reset
-        console.log('!!! TRUE GLOBAL RESET COMPLETE !!!');
-        res.status(200).send('<h1 style="font-family: sans-serif; color: green;">✅ GAME HAS BEEN COMPLETELY RESET FOR ALL USERS!</h1>');
+        // We no longer need to reset a device table
+        console.log('!!! GAME COUNTER HAS BEEN RESET TO 0 !!!');
+        res.status(200).send('<h1 style="font-family: sans-serif; color: green;">✅ GAME COUNTER RESET TO 0!</h1>');
     } catch (err) {
         console.error('RESET FAILED:', err.stack);
         res.status(500).send('<h1>❌ Failed to reset counter.</h1>');

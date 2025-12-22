@@ -32,7 +32,7 @@ async function initializeDatabase() {
     }
 }
 
-const winnerMilestones = [150, 250, 350, 450, 550, 650, 750, 850, 950, 9000];
+const winnerMilestones = [115, 160, 220, 270, 330,,380, 440, 500, 550, 9000];
 
 app.get('/', (req, res) => {
     console.log(`Ping received at ${new Date().toISOString()}. Server is awake. ✅`);
